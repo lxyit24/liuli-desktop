@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/providers/providers.dart';
+import 'package:fl_clash/services/liuli_update.dart';
 import 'package:fl_clash/state.dart';
 import 'package:fl_clash/ui/icons/icons.dart';
 import 'package:fl_clash/ui/ui.dart';
@@ -27,16 +28,8 @@ class AboutView extends ConsumerWidget {
 
   Future<void> _checkUpdate(BuildContext context, WidgetRef ref) async {
     if (ref.read(loadingProvider(LoadingTag.checkUpdate))) return;
-    final commonAction = ref.read(commonActionProvider.notifier);
-    final result = await globalState.loadingRun(
-      () async => (release: await request.checkForUpdate()),
-      title: context.appLocalizations.checkUpdate,
-      tag: LoadingTag.checkUpdate,
-    );
-    if (result == null) return;
-    unawaited(
-      commonAction.checkUpdateResultHandle(data: result.release, isUser: true),
-    );
+    // 琉璃：走面板清单 + 多源测速（上游 GitHub 在境内常不通）
+    await showLiuliUpdate(context, current: globalState.packageInfo.version);
   }
 
   Widget _buildLinkItem({
@@ -91,8 +84,8 @@ class AboutView extends ConsumerWidget {
               _buildLinkItem(
                 glyph: AppGlyphs.code,
                 title: appLocalizations.project,
-                url: 'https://github.com/$repository',
-                label: 'github.com/$repository',
+                url: 'https://github.com/lxyit24/liuli-desktop',
+                label: 'github.com/lxyit24/liuli-desktop',
               ),
               _buildLinkItem(
                 glyph: AppGlyphs.cpu,

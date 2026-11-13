@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fl_clash/providers/providers.dart';
+import 'package:fl_clash/services/liuli_update.dart';
+import 'package:fl_clash/state.dart';
 import 'package:fl_clash/ui/icons/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -40,6 +42,14 @@ class _AccountViewState extends ConsumerState<AccountView> {
   String _token = '';
   String _subUrl = '';
   Map<String, dynamic> _info = const {};
+
+  // 客户端更新（多源测速）
+  bool _checking = false;
+  UpdateInfo? _updInfo;
+  List<MirrorSpeed> _speeds = const [];
+  double? _progress;
+  File? _downloaded;
+  String? _updateMsg;
 
   bool get _loggedIn => _token.isNotEmpty;
 
@@ -271,6 +281,8 @@ class _AccountViewState extends ConsumerState<AccountView> {
                     Text(_error!,
                         style: TextStyle(color: scheme.error, fontSize: 13)),
                   ],
+                  const SizedBox(height: 16),
+                  _buildUpdateCard(scheme),
                   if (_loggedIn) ...[
                     const SizedBox(height: 16),
                     _buildSubCard(scheme),
@@ -280,6 +292,179 @@ class _AccountViewState extends ConsumerState<AccountView> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------- 客户端更新
+  Future<void> _checkUpdate() async {
+    setState(() {
+      _checking = true;
+      _updateMsg = null;
+      _updInfo = null;
+      _speeds = const [];
+      _progress = null;
+      _downloaded = null;
+    });
+    try {
+      final info = await fetchUpdate(_base);
+      if (info == null) {
+        setState(() => _updateMsg = '更新服务不可达，请稍后再试');
+        return;
+      }
+      setState(() => _updInfo = info);
+      final speeds = await probeMirrors(info.mirrors);
+      if (mounted) setState(() => _speeds = speeds);
+    } catch (e) {
+      if (mounted) setState(() => _updateMsg = '检查更新失败：$e');
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  Future<void> _downloadUpdate() async {
+    final info = _updInfo;
+    if (info == null) return;
+    setState(() {
+      _progress = 0;
+      _updateMsg = null;
+    });
+    try {
+      final file = await downloadFromBest(
+        info,
+        _speeds,
+        onProgress: (received, total) {
+          if (!mounted || total <= 0) return;
+          setState(() => _progress = received / total);
+        },
+      );
+      if (mounted) {
+        setState(() {
+          _downloaded = file;
+          _progress = 1;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _updateMsg = '下载失败：$e';
+          _progress = null;
+        });
+      }
+    }
+  }
+
+  void _openDownloadFolder() {
+    final file = _downloaded;
+    if (file == null) return;
+    if (Platform.isWindows) {
+      Process.run('explorer.exe', ['/select,${file.path}']);
+    }
+  }
+
+  Widget _buildUpdateCard(ColorScheme scheme) {
+    final current = globalState.packageInfo.version;
+    final info = _updInfo;
+    final best = _speeds.isNotEmpty ? _speeds.first : null;
+    final hasNewer = info != null && info.isNewerThan(current);
+    return _card(
+      scheme,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('客户端更新',
+                    style: Theme.of(context).textTheme.titleMedium),
+              ),
+              Text('当前 v$current',
+                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '自动并发测速所有下载源（面板 / GitHub / 加速镜像），选最快的那个下载。',
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (_downloaded == null)
+                FilledButton.tonal(
+                  onPressed: _checking ? null : _checkUpdate,
+                  child: Text(_checking ? '测速中…' : '检查更新'),
+                ),
+              if (info != null && hasNewer && _downloaded == null)
+                FilledButton.icon(
+                  onPressed: _progress == null ? _downloadUpdate : null,
+                  icon: const GlyphIcon(AppGlyphs.cloudDownload, size: 15),
+                  label: Text(_progress == null
+                      ? '下载 v${info.version}'
+                      : '下载中 ${(_progress! * 100).toStringAsFixed(0)}%'),
+                ),
+              if (_downloaded != null)
+                FilledButton.tonal(
+                  onPressed: _openDownloadFolder,
+                  child: const Text('打开文件夹'),
+                ),
+            ],
+          ),
+          if (_progress != null) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: _progress == 0 ? null : _progress,
+                minHeight: 6,
+              ),
+            ),
+          ],
+          if (info != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              hasNewer
+                  ? '最新 v${info.version} · ${fmtSize(info.size)}'
+                  : '已是最新（v${info.version}）',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            if (_speeds.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                '最快源：${Uri.tryParse(best!.url)?.host ?? best.url}'
+                ' · ${best.ms} ms · ${best.kbps.toStringAsFixed(0)} KB/s',
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 4),
+              ..._speeds.take(4).map((s) => Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      '${s.ok ? "✓" : "×"} ${Uri.tryParse(s.url)?.host ?? s.url}'
+                      '${s.ok ? "  ${s.ms} ms · ${s.kbps.toStringAsFixed(0)} KB/s" : "  ${s.error ?? "不可用"}"}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: s.ok
+                            ? scheme.onSurfaceVariant
+                            : scheme.error.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  )),
+            ],
+          ],
+          if (_updateMsg != null) ...[
+            const SizedBox(height: 8),
+            Text(_updateMsg!,
+                style: TextStyle(fontSize: 12, color: scheme.error)),
+          ],
+          if (_downloaded != null) ...[
+            const SizedBox(height: 8),
+            Text('已保存：${_downloaded!.path}',
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+          ],
+        ],
       ),
     );
   }
