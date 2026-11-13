@@ -37,6 +37,16 @@ class _AccountViewState extends ConsumerState<AccountView> {
   final _userCtl = TextEditingController();
   final _passCtl = TextEditingController();
 
+  // 账号与安全（改昵称 / 改密码 / 重置订阅）
+  final _nickCtl = TextEditingController();
+  final _oldPwdCtl = TextEditingController();
+  final _newPwdCtl = TextEditingController();
+  final _newPwd2Ctl = TextEditingController();
+  bool _showPwd = false;
+  bool _confirmReset = false;
+  String? _secMsg;
+  bool _secOk = false;
+
   bool _busy = false;
   String? _error;
   String _token = '';
@@ -64,6 +74,10 @@ class _AccountViewState extends ConsumerState<AccountView> {
     _serverCtl.dispose();
     _userCtl.dispose();
     _passCtl.dispose();
+    _nickCtl.dispose();
+    _oldPwdCtl.dispose();
+    _newPwdCtl.dispose();
+    _newPwd2Ctl.dispose();
     super.dispose();
   }
 
@@ -84,6 +98,7 @@ class _AccountViewState extends ConsumerState<AccountView> {
           _info = jsonDecode(infoRaw) as Map<String, dynamic>;
         } catch (_) {}
       }
+      _nickCtl.text = (_info['display'] ?? _info['username'] ?? '').toString();
     });
     if (token.isNotEmpty) {
       unawaited(_refresh());
@@ -120,7 +135,7 @@ class _AccountViewState extends ConsumerState<AccountView> {
         req.headers.contentType = ContentType.json;
         req.write(jsonEncode(body));
       }
-      req.headers.set('User-Agent', 'FlClash/0.9.3 (Liuli)');
+      req.headers.set('User-Agent', 'FlClash/${globalState.packageInfo.version} (Liuli)');
       final resp = await req.close().timeout(const Duration(seconds: 20));
       final text = await resp.transform(utf8.decoder).join();
       final data = jsonDecode(text);
@@ -170,7 +185,7 @@ class _AccountViewState extends ConsumerState<AccountView> {
       try {
         final uri = Uri.parse('$_base/api/client/subinfo?token=$_token');
         final req = await client.getUrl(uri);
-        req.headers.set('User-Agent', 'FlClash/0.9.3 (Liuli)');
+        req.headers.set('User-Agent', 'FlClash/${globalState.packageInfo.version} (Liuli)');
         final resp = await req.close().timeout(const Duration(seconds: 20));
         final text = await resp.transform(utf8.decoder).join();
         final res = jsonDecode(text);
@@ -190,6 +205,10 @@ class _AccountViewState extends ConsumerState<AccountView> {
             'deviceLimit': res['deviceLimit'],
             'nodeCount': res['nodeCount'],
           };
+          if ((_nickCtl.text).trim().isEmpty) {
+            _nickCtl.text =
+                (_info['display'] ?? _info['username'] ?? '').toString();
+          }
           await _save();
         }
       } finally {
@@ -286,6 +305,8 @@ class _AccountViewState extends ConsumerState<AccountView> {
                   if (_loggedIn) ...[
                     const SizedBox(height: 16),
                     _buildSubCard(scheme),
+                    const SizedBox(height: 16),
+                    _buildSecurityCard(scheme),
                   ],
                 ],
               ),
@@ -618,8 +639,7 @@ class _AccountViewState extends ConsumerState<AccountView> {
     );
   }
 
-  Widget _buildSubCard(ColorScheme scheme) {
-    return _card(
+  Widget _buildSubCard(ColorScheme scheme) {    return _card(
       scheme,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -666,6 +686,261 @@ class _AccountViewState extends ConsumerState<AccountView> {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------ 账号与安全
+
+  Future<void> _saveDisplay() async {
+    final name = _nickCtl.text.trim();
+    if (name.isEmpty) {
+      setState(() {
+        _secOk = false;
+        _secMsg = '昵称不能为空';
+      });
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _secMsg = null;
+    });
+    try {
+      final res = await _request('/api/client/profile', body: {
+        'token': _token,
+        'display': name,
+      });
+      final ok = res['ok'] == true;
+      if (ok) {
+        _info = {..._info, 'display': name};
+        await _save();
+      }
+      if (mounted) {
+        setState(() {
+          _secOk = ok;
+          _secMsg = ok ? '昵称已更新' : (res['error'] ?? '保存失败').toString();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _secOk = false;
+          _secMsg = '网络错误：$e';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _changePassword() async {
+    final old = _oldPwdCtl.text;
+    final n1 = _newPwdCtl.text;
+    final n2 = _newPwd2Ctl.text;
+    String? bad;
+    if (old.isEmpty) {
+      bad = '请输入原密码';
+    } else if (n1.length < 6) {
+      bad = '新密码至少 6 位';
+    } else if (n1 != n2) {
+      bad = '两次输入的新密码不一致';
+    }
+    if (bad != null) {
+      setState(() {
+        _secOk = false;
+        _secMsg = bad;
+      });
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _secMsg = null;
+    });
+    try {
+      final res = await _request('/api/client/password', body: {
+        'token': _token,
+        'old': old,
+        'new': n1,
+      });
+      final ok = res['ok'] == true;
+      if (ok) {
+        _oldPwdCtl.clear();
+        _newPwdCtl.clear();
+        _newPwd2Ctl.clear();
+      }
+      if (mounted) {
+        setState(() {
+          _secOk = ok;
+          _showPwd = !ok;
+          _secMsg = ok
+              ? '密码已修改，下次登录请用新密码'
+              : (res['error'] ?? '修改失败').toString();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _secOk = false;
+          _secMsg = '网络错误：$e';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _resetSub() async {
+    setState(() {
+      _busy = true;
+      _secMsg = null;
+    });
+    try {
+      final res = await _request('/api/client/sub/reset', body: {'token': _token});
+      final ok = res['ok'] == true;
+      if (ok) {
+        _subUrl = (res['subUrl'] ?? _subUrl).toString();
+        await _save();
+      }
+      if (mounted) {
+        setState(() {
+          _secOk = ok;
+          _confirmReset = false;
+          _secMsg = ok
+              ? '订阅地址已重置，旧地址已失效；点上面「导入 / 更新节点」用新地址重新导入'
+              : (res['error'] ?? '重置失败').toString();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _secOk = false;
+          _secMsg = '网络错误：$e';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _buildSecurityCard(ColorScheme scheme) {
+    final msg = _secMsg;
+    return _card(
+      scheme,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('账号与安全', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            '改昵称、改密码、重置订阅地址都在这里完成；'
+            '注销账号、订单与退款请到网页用户中心（用户中心 → 账户 / 订单）。',
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _field(_nickCtl, '昵称')),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: FilledButton.tonal(
+                  onPressed: _busy ? null : _saveDisplay,
+                  child: const Text('保存'),
+                ),
+              ),
+            ],
+          ),
+          if (!_showPwd)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.tonalIcon(
+                onPressed: _busy ? null : () => setState(() => _showPwd = true),
+                icon: const GlyphIcon(AppGlyphs.lock, size: 15),
+                label: const Text('修改密码'),
+              ),
+            )
+          else ...[
+            _field(_oldPwdCtl, '原密码', obscure: true),
+            _field(_newPwdCtl, '新密码（至少 6 位）', obscure: true),
+            _field(_newPwd2Ctl, '再输一次新密码', obscure: true),
+            Row(
+              children: [
+                FilledButton(
+                  onPressed: _busy ? null : _changePassword,
+                  child: const Text('确认修改'),
+                ),
+                const SizedBox(width: 10),
+                TextButton(
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() {
+                            _showPwd = false;
+                            _oldPwdCtl.clear();
+                            _newPwdCtl.clear();
+                            _newPwd2Ctl.clear();
+                          }),
+                  child: const Text('取消'),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          if (!_confirmReset)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() => _confirmReset = true),
+                  icon: const GlyphIcon(AppGlyphs.refresh, size: 15),
+                  label: const Text('重置订阅地址'),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '怀疑订阅地址被分享时用；重置后旧地址与已复制的节点链接立即失效。',
+                  style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                ),
+              ],
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '重置后旧地址会立即失效，其它设备需要重新导入。确定吗？',
+                  style: TextStyle(fontSize: 12, color: scheme.error),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    FilledButton(
+                      onPressed: _busy ? null : _resetSub,
+                      child: const Text('确认重置'),
+                    ),
+                    const SizedBox(width: 10),
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => setState(() => _confirmReset = false),
+                      child: const Text('取消'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          if (msg != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              msg,
+              style: TextStyle(
+                fontSize: 12,
+                color: _secOk ? scheme.primary : scheme.error,
+              ),
+            ),
+          ],
         ],
       ),
     );
