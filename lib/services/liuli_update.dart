@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fl_clash/enum/enum.dart';
+import 'package:fl_clash/providers/providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -58,6 +61,20 @@ HttpClient _client() => HttpClient()
   ..connectionTimeout = const Duration(seconds: 8)
   ..userAgent = 'Liuli/update';
 
+/// GitHub 系域名在境内常被墙；如果内核在跑，就让它走我们的节点出口
+bool _isGithubHost(String url) {
+  final host = Uri.tryParse(url)?.host ?? '';
+  return host.contains('github') || host.contains('githubusercontent');
+}
+
+HttpClient _clientFor(String url, int? proxyPort) {
+  final client = _client();
+  if (proxyPort != null && proxyPort > 0 && _isGithubHost(url)) {
+    client.findProxy = (_) => 'PROXY 127.0.0.1:$proxyPort';
+  }
+  return client;
+}
+
 /// 拉更新清单（面板优先；面板不可达时尝试镜像域名）
 Future<UpdateInfo?> fetchUpdate(String base) async {
   final candidates = <String>[
@@ -94,8 +111,8 @@ Future<UpdateInfo?> fetchUpdate(String base) async {
 }
 
 /// 并发探测各源：取前 256KB，算「首包耗时 + 吞吐」
-Future<List<MirrorSpeed>> probeMirrors(List<String> urls) async {
-  final results = await Future.wait(urls.map((u) => _probe(u)));
+Future<List<MirrorSpeed>> probeMirrors(List<String> urls, {int? proxyPort}) async {
+  final results = await Future.wait(urls.map((u) => _probe(u, proxyPort)));
   results.sort((a, b) {
     if (a.ok != b.ok) return a.ok ? -1 : 1;
     return b.kbps.compareTo(a.kbps);
@@ -103,8 +120,8 @@ Future<List<MirrorSpeed>> probeMirrors(List<String> urls) async {
   return results;
 }
 
-Future<MirrorSpeed> _probe(String url) async {
-  final client = _client();
+Future<MirrorSpeed> _probe(String url, [int? proxyPort]) async {
+  final client = _clientFor(url, proxyPort);
   final sw = Stopwatch()..start();
   try {
     final req = await client.getUrl(Uri.parse(url)).timeout(_probeTimeout);
@@ -151,6 +168,7 @@ Future<File> downloadFromBest(
   UpdateInfo info,
   List<MirrorSpeed> speeds, {
   void Function(int received, int total)? onProgress,
+  int? proxyPort,
 }) async {
   final dir = await getDownloadsDirectory() ??
       Directory('${Platform.environment['USERPROFILE']}\\Downloads');
@@ -162,7 +180,7 @@ Future<File> downloadFromBest(
   }
   Object? lastError;
   for (final url in ordered) {
-    final client = _client();
+    final client = _clientFor(url, proxyPort);
     try {
       final resp = await (await client.getUrl(Uri.parse(url))).close();
       if (resp.statusCode >= 400) {
@@ -226,22 +244,23 @@ Future<void> showLiuliUpdate(BuildContext context, {required String current}) {
   );
 }
 
-class _LiuliUpdateDialog extends StatefulWidget {
+class _LiuliUpdateDialog extends ConsumerStatefulWidget {
   const _LiuliUpdateDialog({required this.current});
 
   final String current;
 
   @override
-  State<_LiuliUpdateDialog> createState() => _LiuliUpdateDialogState();
+  ConsumerState<_LiuliUpdateDialog> createState() => _LiuliUpdateDialogState();
 }
 
-class _LiuliUpdateDialogState extends State<_LiuliUpdateDialog> {
+class _LiuliUpdateDialogState extends ConsumerState<_LiuliUpdateDialog> {
   bool _checking = true;
   UpdateInfo? _info;
   List<MirrorSpeed> _speeds = const [];
   double? _progress;
   File? _downloaded;
   String? _msg;
+  int? _proxyPort;
 
   String get _current => widget.current;
 
@@ -289,7 +308,11 @@ class _LiuliUpdateDialogState extends State<_LiuliUpdateDialog> {
         });
         return;
       }
-      final speeds = await probeMirrors(info.mirrors);
+      final status = ref.read(coreStatusProvider);
+      if (status == CoreStatus.connected) {
+        _proxyPort = ref.read(patchClashConfigProvider).mixedPort;
+      }
+      final speeds = await probeMirrors(info.mirrors, proxyPort: _proxyPort);
       if (!mounted) return;
       setState(() {
         _info = info;
@@ -314,7 +337,8 @@ class _LiuliUpdateDialogState extends State<_LiuliUpdateDialog> {
       _msg = null;
     });
     try {
-      final f = await downloadFromBest(info, _speeds, onProgress: (r, t) {
+      final f = await downloadFromBest(info, _speeds,
+          proxyPort: _proxyPort, onProgress: (r, t) {
         if (!mounted || t <= 0) return;
         setState(() => _progress = r / t);
       });
@@ -392,6 +416,9 @@ class _LiuliUpdateDialogState extends State<_LiuliUpdateDialog> {
                       color: s.ok ? scheme.onSurfaceVariant : scheme.error,
                       top: 3,
                     )),
+                if (_proxyPort != null)
+                  line('GitHub 系源已走本机节点加速（端口 $_proxyPort）',
+                      size: 12, color: scheme.primary, top: 6),
                 if (best != null)
                   line('自动选择：${Uri.tryParse(best.url)?.host}',
                       size: 12, weight: FontWeight.w600, color: scheme.primary, top: 8),

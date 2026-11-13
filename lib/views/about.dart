@@ -11,20 +11,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 @immutable
-class Contributor {
-  final String avatar;
-  final String name;
-
-  const Contributor({required this.avatar, required this.name});
-}
 
 class AboutView extends ConsumerWidget {
   const AboutView({super.key});
 
-  static const _contributors = [
-    Contributor(avatar: 'assets/images/avatar/june2.jpg', name: 'June2'),
-    Contributor(avatar: 'assets/images/avatar/arue.jpg', name: 'Arue'),
-  ];
 
   Future<void> _checkUpdate(BuildContext context, WidgetRef ref) async {
     if (ref.read(loadingProvider(LoadingTag.checkUpdate))) return;
@@ -94,36 +84,28 @@ class AboutView extends ConsumerWidget {
                 label: 'github.com/chen08209/Clash.Meta',
               ),
               _buildLinkItem(
-                glyph: AppGlyphs.send,
-                title: 'Telegram',
-                url: 'https://t.me/FlClash',
-                label: 't.me/FlClash',
+                glyph: AppGlyphs.gavel,
+                title: '开源许可',
+                url: 'https://www.gnu.org/licenses/gpl-3.0.html',
+                label: 'GNU GPL-3.0',
               ),
             ],
           ),
           generateSection(
-            title: appLocalizations.otherContributors,
+            title: '上游与致谢',
             items: [
-              for (final contributor in _contributors)
-                ListItem(
-                  leading: Container(
-                    width: 40,
-                    height: 40,
-                    foregroundDecoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      image: DecorationImage(
-                        image: AssetImage(contributor.avatar),
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: context.colorScheme.primaryContainer,
-                    ),
-                  ),
-                  title: Text(contributor.name),
-                  subtitle: Text(appLocalizations.appIconDesign),
-                ),
+              _buildLinkItem(
+                glyph: AppGlyphs.sparkle,
+                title: 'FlClash（本项目上游）',
+                url: 'https://github.com/chen08209/FlClash',
+                label: 'github.com/chen08209/FlClash',
+              ),
+              _buildLinkItem(
+                glyph: AppGlyphs.account,
+                title: '上游作者',
+                url: 'https://github.com/chen08209',
+                label: 'chen08209 及 FlClash 贡献者',
+              ),
             ],
           ),
         ],
@@ -198,7 +180,9 @@ class _AboutHero extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: Text(
-              appLocalizations.desc,
+              '琉璃 · 安全加速客户端\n'
+              '界面与账号体系由琉璃提供；底层基于 FlClash（GPL-3.0）修改，'
+              '感谢上游作者与 Clash.Meta 内核。',
               textAlign: TextAlign.center,
               style: AppTextStyle.subheadline
                   .of(context)
