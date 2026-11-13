@@ -7,6 +7,7 @@ import 'package:fl_clash/services/liuli_update.dart';
 import 'package:fl_clash/state.dart';
 import 'package:fl_clash/ui/icons/icons.dart';
 import 'package:fl_clash/ui/ui.dart';
+import 'package:fl_clash/views/liuli_legal.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -35,6 +36,25 @@ class AboutView extends ConsumerWidget {
       trailing: const GlyphIcon(AppGlyphs.openExternal),
       onTap: () {
         dialogs.openUrl(url);
+      },
+    );
+  }
+
+  /// 站内页面（用户协议 / 隐私政策）：在应用内部打开，不跳浏览器
+  Widget _buildPageItem({
+    required BuildContext context,
+    required Glyph glyph,
+    required String title,
+    required String label,
+    required WidgetBuilder builder,
+  }) {
+    return ListItem(
+      leading: _LinkBadge(glyph: glyph),
+      title: Text(title),
+      subtitle: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: const GlyphIcon(AppGlyphs.chevronForward),
+      onTap: () {
+        Navigator.of(context).push(PagedSheetRoute<void>(builder: builder));
       },
     );
   }
@@ -89,17 +109,19 @@ class AboutView extends ConsumerWidget {
                 url: 'https://www.gnu.org/licenses/gpl-3.0.html',
                 label: 'GNU GPL-3.0',
               ),
-              _buildLinkItem(
+              _buildPageItem(
+                context: context,
                 glyph: AppGlyphs.profiles,
                 title: '用户协议',
-                url: '$liuliBaseCached/terms',
-                label: 'liuli · 用户协议',
+                label: '应用内查看 · 不跳浏览器',
+                builder: (_) => const LiuliLegalView(name: 'terms'),
               ),
-              _buildLinkItem(
+              _buildPageItem(
+                context: context,
                 glyph: AppGlyphs.lock,
                 title: '隐私政策',
-                url: '$liuliBaseCached/privacy',
-                label: 'liuli · 隐私政策',
+                label: '应用内查看 · 不跳浏览器',
+                builder: (_) => const LiuliLegalView(name: 'privacy'),
               ),
             ],
           ),

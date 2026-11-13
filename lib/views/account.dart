@@ -204,6 +204,8 @@ class _AccountViewState extends ConsumerState<AccountView> {
             'deviceCount': res['deviceCount'],
             'deviceLimit': res['deviceLimit'],
             'nodeCount': res['nodeCount'],
+            'maxMultiplier': res['maxMultiplier'],
+            'multiplierNote': res['multiplierNote'],
           };
           if ((_nickCtl.text).trim().isEmpty) {
             _nickCtl.text =
@@ -670,6 +672,30 @@ class _AccountViewState extends ConsumerState<AccountView> {
             ],
           ),
           const SizedBox(height: 12),
+          if (((_info['maxMultiplier'] as num?) ?? 1) > 1) ...[
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    (_info['multiplierNote'] ??
+                            '部分线路按流量倍率计费，用 1 GB 按倍率折算')
+                        .toString(),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
           Row(
             children: [
               FilledButton.tonalIcon(
