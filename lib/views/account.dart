@@ -46,22 +46,6 @@ class _AccountViewState extends ConsumerState<AccountView> {
   @override
   void initState() {
     super.initState();
-    // 临时：把构建异常直接显示出来，方便定位（定位后删除）
-    ErrorWidget.builder = (details) {
-      try {
-        File(r'C:\dev\liuli_error.txt').writeAsStringSync(
-          '${details.exceptionAsString()}\n\n${details.stack ?? ''}\n\n${details.context ?? ''}',
-        );
-      } catch (_) {}
-      return Container(
-        color: const Color(0xFFB00020),
-        padding: const EdgeInsets.all(12),
-        child: Text(
-          details.exceptionAsString(),
-          style: const TextStyle(color: Colors.white, fontSize: 11),
-        ),
-      );
-    };
     _restore();
   }
 

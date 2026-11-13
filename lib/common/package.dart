@@ -6,7 +6,8 @@ import 'common.dart';
 
 extension PackageInfoExtension on PackageInfo {
   String get ua => [
-    '$appName/v$version',
+    // HTTP 头只能是 ASCII，这里不能用中文 appName（琉璃）
+    'Liuli/v$version',
     'clash-verge',
     'Platform/${Platform.operatingSystem}',
   ].join(' ');
