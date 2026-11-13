@@ -1,0 +1,67 @@
+name: windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 上游 .gitmodules 用的是 SSH 地址，CI 里换成 HTTPS 才能拉
+      - name: Submodules (https)
+        shell: bash
+        run: |
+          git config -f .gitmodules submodule.core/Clash.Meta.url https://github.com/chen08209/Clash.Meta.git
+          git config -f .gitmodules submodule.plugins/prism_ui.url https://github.com/chen08209/prism_ui.git
+          git submodule sync --recursive
+          git submodule update --init --recursive --depth 1
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.50.0"
+          cache: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: China mirrors
+        shell: bash
+        run: |
+          {
+            echo "PUB_HOSTED_URL=https://pub.flutter-io.cn"
+            echo "FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn"
+            echo "GOPROXY=https://goproxy.cn,direct"
+          } >> "$GITHUB_ENV"
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Build windows
+        run: flutter build windows --release --dart-define=APP_ENV=stable
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath liuli-windows.zip -Force
+          Get-Item liuli-windows.zip | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: liuli-windows-${{ github.sha }}
+          path: liuli-windows.zip
+          if-no-files-found: error
