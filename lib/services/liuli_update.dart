@@ -229,12 +229,17 @@ String fmtSize(int bytes) {
 // ---------------------------------------------------------------- �����ڡ��� ������
 // �� ���� �� ���� ʹ�ã�������嵥 + ��Դ���٣����ٲ����� GitHub��
 
+/// 最近一次解析到的面板地址（同步可读，供拼链接用）
+String liuliBaseCached = 'https://liuli.lianji.win';
+
 Future<String> liuliBase() async {
   final sp = await SharedPreferences.getInstance();
   var s = (sp.getString('liuli_server') ?? '').trim();
   if (s.isEmpty) s = 'https://liuli.lianji.win';
   if (s.contains('/api/')) s = s.substring(0, s.indexOf('/api/'));
-  return s.replaceAll(RegExp(r'/+$'), '');
+  s = s.replaceAll(RegExp(r'/+$'), '');
+  liuliBaseCached = s;
+  return s;
 }
 
 Future<void> showLiuliUpdate(BuildContext context, {required String current}) {

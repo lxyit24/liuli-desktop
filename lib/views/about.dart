@@ -89,6 +89,18 @@ class AboutView extends ConsumerWidget {
                 url: 'https://www.gnu.org/licenses/gpl-3.0.html',
                 label: 'GNU GPL-3.0',
               ),
+              _buildLinkItem(
+                glyph: AppGlyphs.profiles,
+                title: '用户协议',
+                url: '$liuliBaseCached/terms',
+                label: 'liuli · 用户协议',
+              ),
+              _buildLinkItem(
+                glyph: AppGlyphs.lock,
+                title: '隐私政策',
+                url: '$liuliBaseCached/privacy',
+                label: 'liuli · 隐私政策',
+              ),
             ],
           ),
           generateSection(
