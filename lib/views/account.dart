@@ -107,25 +107,24 @@ class _AccountViewState extends ConsumerState<AccountView> {
 
   Future<void> _save() async {
     final sp = await SharedPreferences.getInstance();
-    await sp.setString(_kServer, _serverCtl.text.trim());
+    final normalized = normalizeLiuliBase(_serverCtl.text);
+    _serverCtl.text = normalized;
+    await sp.setString(_kServer, normalized);
     await sp.setString(_kUser, _userCtl.text.trim());
     await sp.setString(_kToken, _token);
     await sp.setString(_kSub, _subUrl);
     await sp.setString(_kInfo, jsonEncode(_info));
   }
 
-  String get _base {
-    var s = _serverCtl.text.trim();
-    if (s.isEmpty) s = _defaultServer;
-    if (s.contains('/api/')) s = s.substring(0, s.indexOf('/api/'));
-    return s.replaceAll(RegExp(r'/+$'), '');
-  }
+  String get _base => normalizeLiuliBase(_serverCtl.text);
 
   Future<Map<String, dynamic>> _request(
     String path, {
     Map<String, dynamic>? body,
   }) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 12);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 12)
+      ..badCertificateCallback = ((cert, host, port) => false);
     try {
       final uri = Uri.parse('$_base$path');
       final req = body == null
