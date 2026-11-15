@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/providers/providers.dart';
 import 'package:flutter/material.dart';
@@ -59,7 +61,9 @@ const _probeTimeout = Duration(seconds: 8);
 
 HttpClient _client() => HttpClient()
   ..connectionTimeout = const Duration(seconds: 8)
-  ..userAgent = 'Liuli/update';
+  ..userAgent = 'Liuli/update'
+  // 面板/更新这类关键请求永远不接受坏证书（即使用户关掉了全局证书检查）
+  ..badCertificateCallback = ((cert, host, port) => false);
 
 /// GitHub 系域名在境内常被墙；如果内核在跑，就让它走我们的节点出口
 bool _isGithubHost(String url) {
@@ -205,6 +209,16 @@ Future<File> downloadFromBest(
       }
       if (await target.exists()) await target.delete();
       await tmp.rename(target.path);
+      // 有 sha256 就必须校验（服务端变了/镜像被替换都能拦住）
+      final want = info.sha256.trim().toLowerCase();
+      if (want.length == 64) {
+        final got = await _sha256File(target);
+        if (got != want) {
+          await target.delete();
+          lastError = 'SHA256 校验失败，已删除';
+          continue;
+        }
+      }
       return target;
     } catch (e) {
       lastError = e;
@@ -213,6 +227,11 @@ Future<File> downloadFromBest(
     }
   }
   throw Exception('所有下载源都失败：$lastError');
+}
+
+Future<String> _sha256File(File f) async {
+  final digest = await sha256.bind(f.openRead()).first;
+  return digest.toString();
 }
 
 String fmtSize(int bytes) {
@@ -229,15 +248,29 @@ String fmtSize(int bytes) {
 // ---------------------------------------------------------------- �����ڡ��� ������
 // �� ���� �� ���� ʹ�ã�������嵥 + ��Դ���٣����ٲ����� GitHub��
 
+/// 统一面板地址：必须是 https（http 自动升级），去掉尾部斜杠和 /api/ 前缀。
+///
+/// 明文 http 等于把账号密码和 token 直接交给中间人，所以这里统一收紧。
+String normalizeLiuliBase(String raw) {
+  var s = (raw ?? '').trim();
+  if (s.isEmpty) return 'https://liuli.lianji.win';
+  if (s.contains('/api/')) s = s.substring(0, s.indexOf('/api/'));
+  s = s.replaceAll(RegExp(r'/+$'), '');
+  final lower = s.toLowerCase();
+  if (lower.startsWith('http://')) {
+    s = 'https://${s.substring(7)}';
+  } else if (!lower.startsWith('https://')) {
+    s = 'https://$s';
+  }
+  return s;
+}
+
 /// 最近一次解析到的面板地址（同步可读，供拼链接用）
 String liuliBaseCached = 'https://liuli.lianji.win';
 
 Future<String> liuliBase() async {
   final sp = await SharedPreferences.getInstance();
-  var s = (sp.getString('liuli_server') ?? '').trim();
-  if (s.isEmpty) s = 'https://liuli.lianji.win';
-  if (s.contains('/api/')) s = s.substring(0, s.indexOf('/api/'));
-  s = s.replaceAll(RegExp(r'/+$'), '');
+  final s = normalizeLiuliBase(sp.getString('liuli_server') ?? '');
   liuliBaseCached = s;
   return s;
 }
